@@ -18,7 +18,7 @@
 ```bash
 PACK_URL="https://github.com/USER/REPO/releases/download/v1/Arcadia-ServerPack.zip" \
 ACCEPT_EULA=true \
-XMX=8G \
+XMX=10G \
 VOICE_PORT=24454 \
 bash <(curl -fsSL https://raw.githubusercontent.com/USER/REPO/main/install.sh)
 ```
@@ -33,9 +33,9 @@ ARCADIA_SCRIPT_URL="https://raw.githubusercontent.com/USER/REPO/main/arcadia"
 
 - `PACK_URL`: ссылка на `Arcadia-ServerPack.zip`, обязательна.
 - `SERVER_DIR`: папка сервера, по умолчанию `$HOME/arcadia-server`.
-- `XMS`: минимальная RAM, по умолчанию `4G`.
-- `XMX`: максимальная RAM, по умолчанию `8G`.
-- `PORT`: порт сервера, по умолчанию `25565`.
+- `XMS`: минимальная RAM, по умолчанию `6G`.
+- `XMX`: максимальная RAM, по умолчанию `10G`.
+- `PORT`: порт сервера, по умолчанию `25566`.
 - `VOICE_PORT`: UDP порт Simple Voice Chat, по умолчанию `24454`.
 - `ACCEPT_EULA`: `true` для принятия EULA.
 - `AUTO_START`: `true`, если нужно запустить сервер сразу после установки.

@@ -5,9 +5,9 @@ TMP_DIR=""
 
 PACK_URL="${PACK_URL:-}"
 SERVER_DIR="${SERVER_DIR:-$HOME/arcadia-server}"
-XMS="${XMS:-4G}"
-XMX="${XMX:-8G}"
-PORT="${PORT:-25565}"
+XMS="${XMS:-6G}"
+XMX="${XMX:-10G}"
+PORT="${PORT:-25566}"
 VOICE_PORT="${VOICE_PORT:-24454}"
 ACCEPT_EULA="${ACCEPT_EULA:-false}"
 AUTO_START="${AUTO_START:-false}"
@@ -170,7 +170,7 @@ dir_size(){ [[ -d "$1" ]] && du -sh "$1" 2>/dev/null | awk '{print $1}' || echo 
 status_server(){ local state="остановлен"; is_running && state="запущен"; local port="не найден"; [[ -f "$SERVER_DIR/server.properties" ]] && port="$(awk -F= '$1=="server-port"{print $2}' "$SERVER_DIR/server.properties" | tail -n 1)"; local mods=0; [[ -d "$SERVER_DIR/mods" ]] && mods="$(find "$SERVER_DIR/mods" -maxdepth 1 -type f -name '*.jar' | wc -l | tr -d ' ')"; local ram="не найден"; [[ -f "$SERVER_DIR/user_jvm_args.txt" ]] && ram="$(grep -E '^-Xm[sx]' "$SERVER_DIR/user_jvm_args.txt" | tr '\n' ' ')"; echo "Статус: $state"; echo "Путь: $SERVER_DIR"; echo "Порт: ${port:-не найден}"; echo "Модов в mods: $mods"; echo "RAM: $ram"; echo "Размер world: $(dir_size "$SERVER_DIR/world")"; }
 voice_info(){ local file="$SERVER_DIR/config/voicechat/voicechat-server.properties"; local port="24454"; [[ -f "$file" ]] && port="$(awk -F= '$1=="port"{print $2}' "$file" | tail -n 1)"; port="${port:-24454}"; echo "Simple Voice Chat UDP порт: $port"; echo "Нужен именно UDP, не TCP."; echo "ufw: sudo ufw allow ${port}/udp"; echo "В игре: /voicechat test <ник>"; echo "В игре: /voicechat info"; }
 backup_server(){ local world="$SERVER_DIR/world"; [[ -d "$world" ]] || { echo "Папка world не найдена: $world"; exit 1; }; mkdir -p "$BACKUP_DIR"; local archive="$BACKUP_DIR/arcadia-world-$(date +%Y%m%d-%H%M%S).tar.gz"; if is_running; then tmux send-keys -t "$SESSION" "save-off" C-m; tmux send-keys -t "$SESSION" "save-all flush" C-m; sleep 5; tar -czf "$archive" -C "$SERVER_DIR" world; tmux send-keys -t "$SESSION" "save-on" C-m; else tar -czf "$archive" -C "$SERVER_DIR" world; fi; echo "Backup создан: $archive"; }
-change_ram(){ mkdir -p "$SERVER_DIR"; read -r -p "Xms [4G]: " xms; read -r -p "Xmx [8G]: " xmx; xms="${xms:-4G}"; xmx="${xmx:-8G}"; printf -- '-Xms%s\n-Xmx%s\n' "$xms" "$xmx" > "$SERVER_DIR/user_jvm_args.txt"; echo "RAM обновлена: -Xms$xms -Xmx$xmx"; }
+change_ram(){ mkdir -p "$SERVER_DIR"; read -r -p "Xms [6G]: " xms; read -r -p "Xmx [10G]: " xmx; xms="${xms:-6G}"; xmx="${xmx:-10G}"; printf -- '-Xms%s\n-Xmx%s\n' "$xms" "$xmx" > "$SERVER_DIR/user_jvm_args.txt"; echo "RAM обновлена: -Xms$xms -Xmx$xmx"; }
 menu(){ while true; do printf '\nArcadia Echoes Of Power V2\n1) Запустить сервер\n2) Остановить сервер\n3) Перезапустить сервер\n4) Открыть живую консоль сервера\n5) Посмотреть логи\n6) Сделать backup мира\n7) Выдать OP игроку\n8) Добавить игрока в whitelist\n9) Посмотреть статус сервера\n10) Написать сообщение в чат сервера\n11) Отправить любую команду в консоль сервера\n12) Изменить RAM\n13) Информация по voice chat / UDP порту\n0) Выход\n'; read -r -p "Выбор: " c; case "$c" in 1) start_server;; 2) stop_server;; 3) restart_server;; 4) console_server;; 5) logs_server;; 6) backup_server;; 7) read -r -p "Nick: " n; send_cmd "op $n";; 8) read -r -p "Nick: " n; send_cmd "whitelist add $n"; send_cmd "whitelist reload";; 9) status_server;; 10) read -r -p "Текст: " t; send_cmd "say $t";; 11) read -r -p "Команда: " t; send_cmd "$t";; 12) change_ram;; 13) voice_info;; 0) exit 0;; *) echo "Неизвестный пункт.";; esac; done; }
 cmd="${1:-menu}"; shift || true
 case "$cmd" in menu) menu;; start) start_server;; stop) stop_server;; restart) restart_server;; console) console_server;; logs) logs_server;; status) status_server;; backup) backup_server;; voice) voice_info;; op) [[ $# -ge 1 ]] || { echo "Использование: arcadia op Nick"; exit 1; }; send_cmd "op $1";; whitelist) [[ $# -ge 1 ]] || { echo "Использование: arcadia whitelist Nick"; exit 1; }; send_cmd "whitelist add $1"; send_cmd "whitelist reload";; say) [[ $# -ge 1 ]] || { echo "Использование: arcadia say текст"; exit 1; }; send_cmd "say $*";; cmd) [[ $# -ge 1 ]] || { echo "Использование: arcadia cmd команда"; exit 1; }; send_cmd "$*";; ram) change_ram;; help|-h|--help) echo "arcadia start|stop|restart|console|logs|status|backup|voice|op|whitelist|say|cmd|ram";; *) echo "Неизвестная команда."; exit 1;; esac
