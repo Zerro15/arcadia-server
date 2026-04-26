@@ -26,7 +26,7 @@ sudo ufw allow 24454/udp
 ## Команда Установки
 
 ```bash
-PACK_URL="https://github.com/Zerro15/arcadia-server/releases/download/v1.0.0/Arcadia-ServerPack.zip" \
+PACK_URL="https://github.com/Zerro15/arcadia-server/releases/download/1.0.0/Arcadia-ServerPack.zip" \
 ACCEPT_EULA=true \
 XMX=8G \
 VOICE_PORT=24454 \
