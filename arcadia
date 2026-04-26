@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SESSION="${ARCADIA_SESSION:-arcadia-server}"
+SERVER_DIR="${ARCADIA_DIR:-$HOME/arcadia-server}"
+BACKUP_DIR="${ARCADIA_BACKUPS:-$HOME/arcadia-backups}"
+
+usage() {
+  cat <<'EOF'
+Arcadia control:
+  arcadia menu
+  arcadia start
+  arcadia stop
+  arcadia restart
+  arcadia console
+  arcadia logs
+  arcadia status
+  arcadia backup
+  arcadia voice
+  arcadia op Nick
+  arcadia whitelist Nick
+  arcadia say text
+  arcadia cmd command
+  arcadia ram
+EOF
+}
+
+is_running() {
+  tmux has-session -t "$SESSION" 2>/dev/null
+}
+
+send_cmd() {
+  if ! is_running; then
+    echo "Сервер не запущен."
+    exit 1
+  fi
+  tmux send-keys -t "$SESSION" "$*" C-m
+}
+
+start_server() {
+  if is_running; then
+    echo "Сервер уже запущен в tmux-сессии $SESSION."
+    return
+  fi
+  if [[ ! -d "$SERVER_DIR" ]]; then
+    echo "Не найдена папка сервера: $SERVER_DIR"
+    exit 1
+  fi
+  if [[ ! -x "$SERVER_DIR/start.sh" ]]; then
+    chmod +x "$SERVER_DIR/start.sh"
+  fi
+  tmux new-session -d -s "$SESSION" "cd \"$SERVER_DIR\" && ./start.sh"
+  echo "Сервер запущен в фоне."
+  echo "Открыть консоль: arcadia console"
+}
+
+stop_server() {
+  if ! is_running; then
+    echo "Сервер уже остановлен."
+    return
+  fi
+  tmux send-keys -t "$SESSION" "say Сервер останавливается через 10 секунд." C-m
+  tmux send-keys -t "$SESSION" "save-all flush" C-m
+  sleep 10
+  tmux send-keys -t "$SESSION" "stop" C-m
+  echo "Команда stop отправлена."
+}
+
+restart_server() {
+  stop_server
+  echo "Ожидаю завершения tmux-сессии..."
+  for _ in $(seq 1 90); do
+    if ! is_running; then
+      start_server
+      return
+    fi
+    sleep 2
+  done
+  echo "Сессия не завершилась за отведенное время. Проверьте: arcadia console"
+  exit 1
+}
+
+console_server() {
+  if ! is_running; then
+    echo "Сервер не запущен. Запуск: arcadia start"
+    exit 1
+  fi
+  echo "Чтобы выйти из консоли и НЕ выключить сервер: Ctrl+B, потом D"
+  sleep 1
+  tmux attach -t "$SESSION"
+}
+
+logs_server() {
+  local log="$SERVER_DIR/logs/latest.log"
+  if [[ ! -f "$log" ]]; then
+    echo "Лог пока не найден: $log"
+    exit 1
+  fi
+  tail -n 200 -f "$log"
+}
+
+dir_size() {
+  local path="$1"
+  if [[ -d "$path" ]]; then
+    du -sh "$path" 2>/dev/null | awk '{print $1}'
+  else
+    echo "нет"
+  fi
+}
+
+status_server() {
+  local state="остановлен"
+  if is_running; then
+    state="запущен"
+  fi
+  local port="не найден"
+  if [[ -f "$SERVER_DIR/server.properties" ]]; then
+    port="$(awk -F= '$1=="server-port"{print $2}' "$SERVER_DIR/server.properties" | tail -n 1)"
+    [[ -z "$port" ]] && port="не найден"
+  fi
+  local mods_count=0
+  if [[ -d "$SERVER_DIR/mods" ]]; then
+    mods_count="$(find "$SERVER_DIR/mods" -maxdepth 1 -type f -name '*.jar' | wc -l | tr -d ' ')"
+  fi
+  local ram="не найден"
+  if [[ -f "$SERVER_DIR/user_jvm_args.txt" ]]; then
+    ram="$(grep -E '^-Xm[sx]' "$SERVER_DIR/user_jvm_args.txt" | tr '\n' ' ')"
+  fi
+  echo "Статус: $state"
+  echo "Путь: $SERVER_DIR"
+  echo "Порт: $port"
+  echo "Модов в mods: $mods_count"
+  echo "RAM: $ram"
+  echo "Размер world: $(dir_size "$SERVER_DIR/world")"
+}
+
+voice_info() {
+  local file="$SERVER_DIR/config/voicechat/voicechat-server.properties"
+  local port="24454"
+  if [[ -f "$file" ]]; then
+    port="$(awk -F= '$1=="port"{print $2}' "$file" | tail -n 1)"
+    [[ -z "$port" ]] && port="24454"
+  fi
+  echo "Simple Voice Chat"
+  echo "Порт: $port/udp"
+  echo "Важно: нужен именно UDP, не TCP."
+  echo "ufw:"
+  echo "  sudo ufw allow ${port}/udp"
+  echo "В панели хостинга нужен UDP allocation/port."
+  echo "Команды в игре:"
+  echo "  /voicechat test <ник>"
+  echo "  /voicechat info"
+}
+
+backup_server() {
+  local world="$SERVER_DIR/world"
+  if [[ ! -d "$world" ]]; then
+    echo "Папка world не найдена: $world"
+    exit 1
+  fi
+  mkdir -p "$BACKUP_DIR"
+  local stamp archive
+  stamp="$(date +%Y%m%d-%H%M%S)"
+  archive="$BACKUP_DIR/arcadia-world-$stamp.tar.gz"
+  if is_running; then
+    tmux send-keys -t "$SESSION" "save-off" C-m
+    tmux send-keys -t "$SESSION" "save-all flush" C-m
+    sleep 5
+    tar -czf "$archive" -C "$SERVER_DIR" world
+    tmux send-keys -t "$SESSION" "save-on" C-m
+  else
+    tar -czf "$archive" -C "$SERVER_DIR" world
+  fi
+  echo "Backup создан: $archive"
+}
+
+op_player() {
+  [[ $# -ge 1 ]] || { echo "Использование: arcadia op Nick"; exit 1; }
+  send_cmd "op $1"
+}
+
+whitelist_player() {
+  [[ $# -ge 1 ]] || { echo "Использование: arcadia whitelist Nick"; exit 1; }
+  send_cmd "whitelist add $1"
+  send_cmd "whitelist reload"
+}
+
+say_chat() {
+  [[ $# -ge 1 ]] || { echo "Использование: arcadia say текст"; exit 1; }
+  send_cmd "say $*"
+}
+
+raw_cmd() {
+  [[ $# -ge 1 ]] || { echo "Использование: arcadia cmd команда"; exit 1; }
+  send_cmd "$*"
+}
+
+change_ram() {
+  mkdir -p "$SERVER_DIR"
+  local xms xmx
+  read -r -p "Xms [4G]: " xms
+  read -r -p "Xmx [8G]: " xmx
+  xms="${xms:-4G}"
+  xmx="${xmx:-8G}"
+  cat > "$SERVER_DIR/user_jvm_args.txt" <<EOF
+-Xms${xms}
+-Xmx${xmx}
+EOF
+  echo "RAM обновлена: -Xms${xms} -Xmx${xmx}"
+  if is_running; then
+    echo "Перезапустите сервер, чтобы RAM применилась: arcadia restart"
+  fi
+}
+
+menu() {
+  while true; do
+    cat <<'EOF'
+
+Arcadia Echoes Of Power V2
+1) Запустить сервер
+2) Остановить сервер
+3) Перезапустить сервер
+4) Открыть живую консоль сервера
+5) Посмотреть логи
+6) Сделать backup мира
+7) Выдать OP игроку
+8) Добавить игрока в whitelist
+9) Посмотреть статус сервера
+10) Написать сообщение в чат сервера
+11) Отправить любую команду в консоль сервера
+12) Изменить RAM
+13) Информация по voice chat / UDP порту
+0) Выход
+EOF
+    read -r -p "Выбор: " choice
+    case "$choice" in
+      1) start_server ;;
+      2) stop_server ;;
+      3) restart_server ;;
+      4) console_server ;;
+      5) logs_server ;;
+      6) backup_server ;;
+      7) read -r -p "Nick: " nick; op_player "$nick" ;;
+      8) read -r -p "Nick: " nick; whitelist_player "$nick" ;;
+      9) status_server ;;
+      10) read -r -p "Текст: " text; say_chat "$text" ;;
+      11) read -r -p "Команда: " command_text; raw_cmd "$command_text" ;;
+      12) change_ram ;;
+      13) voice_info ;;
+      0) exit 0 ;;
+      *) echo "Неизвестный пункт." ;;
+    esac
+  done
+}
+
+cmd="${1:-menu}"
+shift || true
+case "$cmd" in
+  menu) menu ;;
+  start) start_server ;;
+  stop) stop_server ;;
+  restart) restart_server ;;
+  console) console_server ;;
+  logs) logs_server ;;
+  status) status_server ;;
+  backup) backup_server ;;
+  voice) voice_info ;;
+  op) op_player "$@" ;;
+  whitelist) whitelist_player "$@" ;;
+  say) say_chat "$@" ;;
+  cmd) raw_cmd "$@" ;;
+  ram) change_ram ;;
+  help|-h|--help) usage ;;
+  *) usage; exit 1 ;;
+esac
