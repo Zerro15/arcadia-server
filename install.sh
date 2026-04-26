@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+TMP_DIR=""
+
 PACK_URL="${PACK_URL:-}"
 SERVER_DIR="${SERVER_DIR:-$HOME/arcadia-server}"
 XMS="${XMS:-4G}"
@@ -19,6 +21,14 @@ fi
 need_cmd() {
   command -v "$1" >/dev/null 2>&1
 }
+
+cleanup() {
+  if [[ -n "${TMP_DIR:-}" && -d "$TMP_DIR" ]]; then
+    rm -rf "$TMP_DIR"
+  fi
+}
+
+trap cleanup EXIT
 
 run_as_root() {
   if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
@@ -182,21 +192,19 @@ main() {
   install_deps
 
   mkdir -p "$SERVER_DIR"
-  local tmp
-  tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' EXIT
+  TMP_DIR="$(mktemp -d)"
 
   echo "Downloading server pack..."
-  curl -fL "$PACK_URL" -o "$tmp/Arcadia-ServerPack.zip"
+  curl -fL "$PACK_URL" -o "$TMP_DIR/Arcadia-ServerPack.zip"
 
   echo "Unpacking into $SERVER_DIR..."
-  unzip -q "$tmp/Arcadia-ServerPack.zip" -d "$tmp/unpack"
+  unzip -q "$TMP_DIR/Arcadia-ServerPack.zip" -d "$TMP_DIR/unpack"
   shopt -s dotglob nullglob
-  local entries=("$tmp"/unpack/*)
-  if [[ "${#entries[@]}" -eq 1 && -d "${entries[0]}" && ! -d "$tmp/unpack/mods" ]]; then
+  local entries=("$TMP_DIR"/unpack/*)
+  if [[ "${#entries[@]}" -eq 1 && -d "${entries[0]}" && ! -d "$TMP_DIR/unpack/mods" ]]; then
     cp -a "${entries[0]}"/. "$SERVER_DIR"/
   else
-    cp -a "$tmp"/unpack/. "$SERVER_DIR"/
+    cp -a "$TMP_DIR"/unpack/. "$SERVER_DIR"/
   fi
   shopt -u dotglob nullglob
 
